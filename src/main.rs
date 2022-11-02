@@ -2,6 +2,7 @@ use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
 
 fn main() {
     App::new()
+        .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .add_plugins(DefaultPlugins)
         .add_startup_system(setup)
         .run();

@@ -1,12 +1,30 @@
 use bevy::{prelude::*, sprite::MaterialMesh2dBundle};
+use bevy_rapier2d::prelude::*;
+use leafwing_input_manager::prelude::*;
 use rand::prelude::*;
 
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .add_plugins(DefaultPlugins)
+        .add_plugin(InputManagerPlugin::<Action>::default())
+        // .add_plugin(RapierDebugRenderPlugin::default())
+        .add_plugin(RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(200.0))
+        .insert_resource(RapierConfiguration {
+            gravity: Vec2::ZERO,
+            ..Default::default()
+        })
         .add_startup_system(setup)
+        .add_system(movement)
         .run();
+}
+
+#[derive(Component)]
+struct Player;
+
+#[derive(Actionlike, PartialEq, Eq, Clone, Copy, Hash, Debug)]
+enum Action {
+    Move,
 }
 
 fn setup(
@@ -19,11 +37,32 @@ fn setup(
     // Player circle
     let player_start_pos = Vec2::new(0.0, 0.0);
     let goal_start_pos = Vec2::new(0.0, 0.0);
-    commands.spawn_bundle(MaterialMesh2dBundle {
-        mesh: meshes.add(shape::Circle::new(35.).into()).into(),
-        material: materials.add(ColorMaterial::from(Color::BLUE)),
-        ..Default::default()
-    });
+    let player_radius = 35.0;
+    commands
+        .spawn_bundle(MaterialMesh2dBundle {
+            mesh: meshes.add(shape::Circle::new(player_radius).into()).into(),
+            material: materials.add(ColorMaterial::from(Color::BLUE)),
+            transform: Transform::from_translation(player_start_pos.extend(1.0)),
+            ..Default::default()
+        })
+        .insert(Collider::ball(player_radius))
+        .insert(RigidBody::Dynamic)
+        .insert(ExternalForce::default())
+        .insert(Restitution::coefficient(1.0))
+        .insert(Damping {
+            linear_damping: 0.6,
+            angular_damping: 0.1,
+        })
+        .insert_bundle(InputManagerBundle::<Action> {
+            action_state: ActionState::default(),
+            input_map: InputMap::default()
+                .insert(DualAxis::left_stick(), Action::Move)
+                .insert(VirtualDPad::arrow_keys(), Action::Move)
+                .insert(VirtualDPad::wasd(), Action::Move)
+                .set_gamepad(Gamepad { id: 0 })
+                .build(),
+        })
+        .insert(Player);
 
     spawn_random_bumper_circles(
         &mut commands,
@@ -68,10 +107,26 @@ fn spawn_bumper_circle(
     materials: &mut ResMut<Assets<ColorMaterial>>,
 ) {
     // Player circle
-    commands.spawn_bundle(MaterialMesh2dBundle {
-        mesh: meshes.add(shape::Circle::new(radius).into()).into(),
-        material: materials.add(ColorMaterial::from(Color::RED)),
-        transform: Transform::from_translation(location.extend(0.0)),
-        ..Default::default()
-    });
+    commands
+        .spawn_bundle(MaterialMesh2dBundle {
+            mesh: meshes.add(shape::Circle::new(radius).into()).into(),
+            material: materials.add(ColorMaterial::from(Color::RED)),
+            transform: Transform::from_translation(location.extend(0.0)),
+            ..Default::default()
+        })
+        .insert(Collider::ball(radius))
+        .insert(RigidBody::Fixed)
+        .insert(Restitution::coefficient(3.0));
+}
+
+const MOVE_FORCE: f32 = 1500.0;
+
+fn movement(
+    mut query: Query<(&ActionState<Action>, &mut ExternalForce), With<Player>>,
+    time: Res<Time>,
+) {
+    for (action_state, mut external_force) in query.iter_mut() {
+        let axis_vector = action_state.clamped_axis_pair(Action::Move).unwrap().xy();
+        external_force.force = axis_vector * MOVE_FORCE * time.delta_seconds();
+    }
 }

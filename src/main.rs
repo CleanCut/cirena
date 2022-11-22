@@ -14,8 +14,10 @@ fn main() {
             gravity: Vec2::ZERO,
             ..Default::default()
         })
+        .insert_resource(PhysicsHooksWithQueryResource(Box::new(MyPhysicsHooks {})))
         .add_startup_system(setup)
         .add_system(movement)
+        // .add_system(contact_modifier)
         .run();
 }
 
@@ -62,7 +64,8 @@ fn setup(
                 .set_gamepad(Gamepad { id: 0 })
                 .build(),
         })
-        .insert(Player);
+        .insert(Player)
+        .insert(ActiveHooks::MODIFY_SOLVER_CONTACTS);
 
     spawn_random_bumper_circles(
         &mut commands,
@@ -107,16 +110,19 @@ fn spawn_bumper_circle(
     materials: &mut ResMut<Assets<ColorMaterial>>,
 ) {
     // Player circle
-    commands
-        .spawn_bundle(MaterialMesh2dBundle {
+    commands.spawn((
+        MaterialMesh2dBundle {
             mesh: meshes.add(shape::Circle::new(radius).into()).into(),
             material: materials.add(ColorMaterial::from(Color::RED)),
             transform: Transform::from_translation(location.extend(0.0)),
             ..Default::default()
-        })
-        .insert(Collider::ball(radius))
-        .insert(RigidBody::Fixed)
-        .insert(Restitution::coefficient(3.0));
+        },
+        Collider::ball(radius),
+        ContactForceEventThreshold(0.0),
+        RigidBody::Fixed,
+        Restitution::coefficient(3.0),
+        ActiveHooks::MODIFY_SOLVER_CONTACTS,
+    ));
 }
 
 const MOVE_FORCE: f32 = 1500.0;
@@ -128,5 +134,19 @@ fn movement(
     for (action_state, mut external_force) in query.iter_mut() {
         let axis_vector = action_state.clamped_axis_pair(Action::Move).unwrap().xy();
         external_force.force = axis_vector * MOVE_FORCE * time.delta_seconds();
+    }
+}
+
+struct MyPhysicsHooks;
+
+impl PhysicsHooksWithQuery<NoUserData> for MyPhysicsHooks {
+    fn modify_solver_contacts(
+        &self,
+        context: ContactModificationContextView,
+        _user_data: &Query<NoUserData>,
+    ) {
+        for solver_contact in &mut *context.raw.solver_contacts {
+            *solver_contact.tangent_velocity = // ???
+        }
     }
 }
